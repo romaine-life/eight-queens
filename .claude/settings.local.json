@@ -2,9 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(cmd //c \"rmdir /s /q d:\\\\repos\\\\eight-queens\\\\backend\")",
-      "Bash(gh workflow list --repo nelsong6/eight-queens)",
-      "Bash(gh workflow run \"Phase 3 - CD Deploy\" --repo nelsong6/eight-queens --ref main)",
-      "Bash(gh workflow run \"Phase 3 - CD Deploy\" --repo nelsong6/eight-queens --ref main -f commit_sha=10b2034e6298159461e72dc0a3645435191f654d)"
+      "Bash(gh workflow list --repo romaine-life/eight-queens)",
+      "Bash(gh workflow run \"Phase 3 - CD Deploy\" --repo romaine-life/eight-queens --ref main)",
+      "Bash(gh workflow run \"Phase 3 - CD Deploy\" --repo romaine-life/eight-queens --ref main -f commit_sha=10b2034e6298159461e72dc0a3645435191f654d)"
     ]
   }
 }
