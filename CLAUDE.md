@@ -169,14 +169,12 @@ OpenTofu (Terraform) in `tofu/`. Manages:
 - DNS CNAME record for queens.romaine.life
 - `azurerm_static_web_app_custom_domain` with cname-delegation validation
 
-Shared infra vars injected by Spacelift from infra-bootstrap stack.
+CI uses the repository ARM_* and TFSTATE_STORAGE_ACCOUNT variables with Azure OIDC.
 
-## CI/CD (.github/workflows/)
+## CI/CD (.forgejo/workflows/)
 
-- `full-stack-deploy.yml` — Phase 3 CD; triggered by `spacelift_infra_ready` dispatch or manual. Builds Vite and deploys to Azure Static Web App.
-- `lint.yml` — linting
-- `spacelift-stack-to-main.yml` — Spacelift integration
-- `tofu-lockfile-check.yml` / `tofu-lockfile-update.yml` — OpenTofu lock file management
+- `ci.yaml` checks conventions, OpenTofu format and the Vite build; plans on PR and applies/deploys to Azure Static Web App on main.
+- `tofu-lockfile-update.yaml` opens a checked PR to synchronize the canonical infra-bootstrap provider lock.
 
 ## Change Log
 

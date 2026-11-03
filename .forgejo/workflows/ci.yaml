@@ -1,0 +1,158 @@
+name: CI
+'on':
+  pull_request: null
+  push:
+    branches:
+    - main
+  workflow_dispatch: null
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: https://github.com/actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Resolve checked source
+      id: checked-source
+      run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+    - uses: https://github.com/opentofu/setup-opentofu@v2
+      with:
+        tofu_version: 1.11.0
+        tofu_wrapper: false
+    - name: Repository conventions
+      working-directory: frontend
+      run: |
+        set -euo pipefail
+        bad=$(git ls-files '*.yml')
+        if [ -n "$bad" ]; then printf '%s\n' "$bad"; exit 1; fi
+        bad=$(git ls-files '*_*' | grep -vE 'PULL_REQUEST_TEMPLATE|ISSUE_TEMPLATE|\.(md|js|py|webp|png|jpe?g|gif|svg|ico|txt)$' || true)
+        if [ -n "$bad" ]; then printf '%s\n' "$bad"; exit 1; fi
+        while IFS= read -r path; do
+          if [ -s "$path" ] && [ "$(tail -c 1 "$path" | wc -l)" -eq 0 ]; then
+            echo "Missing trailing newline: $path"
+            exit 1
+          fi
+        done < <(git grep -Il -- '')
+    - name: Check OpenTofu formatting
+      run: tofu fmt -recursive -check
+    - uses: https://github.com/actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Validate frontend build
+      working-directory: frontend
+      run: |
+        npm ci
+        npm run build
+    outputs:
+      source-sha: ${{ steps.checked-source.outputs.sha }}
+  deploy:
+    name: Plan, validate and deploy
+    runs-on: ubuntu-latest
+    enable-openid-connect: true
+    env:
+      ARM_USE_OIDC: 'true'
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+    steps:
+    - uses: https://github.com/actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: ${{ needs.checks.outputs.source-sha }}
+    - name: Check infrastructure scope
+      id: scope
+      env:
+        BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      run: |
+        if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" || git diff --name-only "$BASE" HEAD -- tofu .forgejo | grep -q .; then
+          echo 'run=true' >> "$GITHUB_OUTPUT"
+        else
+          echo 'run=false' >> "$GITHUB_OUTPUT"
+        fi
+    - uses: https://github.com/opentofu/setup-opentofu@v2
+      with:
+        tofu_version: 1.11.0
+        tofu_wrapper: false
+    - name: Install Azure CLI
+      run: |
+        if ! command -v az; then
+          sudo mkdir -p /etc/apt/keyrings
+          curl --fail --silent --show-error https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg >/dev/null
+          echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ noble main' | sudo tee /etc/apt/sources.list.d/azure-cli.list >/dev/null
+          sudo apt-get update -o Dir::Etc::sourcelist=sources.list.d/azure-cli.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
+          sudo apt-get install -y --no-install-recommends azure-cli
+        fi
+    - uses: https://github.com/azure/login@v3
+      with:
+        client-id: ${{ vars.ARM_CLIENT_ID }}
+        tenant-id: ${{ vars.ARM_TENANT_ID }}
+        subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+    - name: Initialize infrastructure and plan changes
+      working-directory: tofu
+      env:
+        TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+        EVENT: ${{ github.event_name }}
+        STORAGE: ${{ vars.TFSTATE_STORAGE_ACCOUNT || 'nelsontofu' }}
+        SCOPE: ${{ steps.scope.outputs.run }}
+      run: |
+        set -euo pipefail
+        printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl --config - --fail --silent --show-error -o shared-providers.tf "$GITHUB_SERVER_URL/api/v1/repos/romaine-life/infra-bootstrap/raw/tofu/provider/shared-providers.tf?ref=main"
+        printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl --config - --fail --silent --show-error -o /tmp/shared-provider.lock "$GITHUB_SERVER_URL/api/v1/repos/romaine-life/infra-bootstrap/raw/tofu/provider/.terraform.lock.hcl?ref=main"
+        if ! cmp -s .terraform.lock.hcl /tmp/shared-provider.lock; then
+          echo 'Provider lock is stale; run Update Tofu Lockfile to sync the canonical lock'
+          diff -u .terraform.lock.hcl /tmp/shared-provider.lock || true
+          exit 1
+        fi
+        tofu init -lockfile=readonly -backend-config=resource_group_name=infra -backend-config="storage_account_name=$STORAGE" -backend-config=container_name=tfstate -backend-config=key=eight-queens.tfstate
+        tofu fmt -check
+        tofu validate
+        if [ "$SCOPE" = true ]; then
+          tofu plan -out=tfplan
+          if [ "$EVENT" != pull_request ]; then tofu apply tfplan; fi
+        fi
+
+        echo "STATIC_WEB_APP_NAME=eight-queens-app" >> "$GITHUB_ENV"
+        echo "RESOURCE_GROUP_NAME=eight-queens-rg" >> "$GITHUB_ENV"
+    - name: Setup Node.js
+      uses: https://github.com/actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Build Frontend
+      working-directory: ./frontend
+      run: |
+        npm ci
+        npm run build
+    - name: Get Static Web App Token
+      id: swa-token
+      run: |
+        TOKEN=$(az staticwebapp secrets list --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP_NAME" --query properties.apiKey -o tsv)
+        test -n "$TOKEN"
+        echo "::add-mask::$TOKEN"
+        echo "deployment_token=$TOKEN" >> "$GITHUB_OUTPUT"
+      if: github.event_name != 'pull_request'
+    - name: Deploy to Azure Static Web App
+      if: github.event_name != 'pull_request'
+      env:
+        INPUT_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ steps.swa-token.outputs.deployment_token }}
+      run: |
+        set -euo pipefail
+        container=$(docker create \
+          -e INPUT_AZURE_STATIC_WEB_APPS_API_TOKEN \
+          -e INPUT_APP_LOCATION=frontend/dist \
+          -e INPUT_SKIP_APP_BUILD=true \
+          -e GITHUB_WORKSPACE=/workspace \
+          --workdir /workspace \
+          --entrypoint /bin/staticsites/StaticSitesClient \
+          mcr.microsoft.com/appsvc/staticappsclient:stable upload)
+        trap 'docker rm -f "$container" >/dev/null' EXIT
+        docker cp frontend "$container:/workspace/"
+        docker start --attach "$container"
+        test "$(docker inspect --format '{{.State.ExitCode}}' "$container")" = 0
+    needs: checks

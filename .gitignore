@@ -7,3 +7,6 @@ dist/
 .terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
+
+# CI synchronizes the canonical infra-bootstrap provider lock.
+!tofu/.terraform.lock.hcl
