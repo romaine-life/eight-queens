@@ -115,7 +115,21 @@ jobs:
         tofu validate
         if [ "$SCOPE" = true ]; then
           tofu plan -out=tfplan
-          if [ "$EVENT" != pull_request ]; then tofu apply tfplan; fi
+          if [ "$EVENT" != pull_request ]; then
+            # Azure validates a newly updated CNAME through public DNS, which can
+            # still cache the previous target for its one-hour TTL.
+            for attempt in $(seq 1 61); do
+              if tofu apply -no-color tfplan 2>&1 | tee /tmp/tofu-apply.log; then
+                break
+              fi
+              if ! grep -Fq 'CNAME Record is invalid' /tmp/tofu-apply.log || [ "$attempt" -eq 61 ]; then
+                exit 1
+              fi
+              echo "CNAME validation has not propagated; retrying in 60 seconds ($attempt/60)"
+              sleep 60
+              tofu plan -out=tfplan
+            done
+          fi
         fi
 
         echo "STATIC_WEB_APP_NAME=eight-queens-app" >> "$GITHUB_ENV"
