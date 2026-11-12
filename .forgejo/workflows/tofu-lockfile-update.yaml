@@ -5,10 +5,10 @@ jobs:
   lockfile-update:
     runs-on: ubuntu-latest
     steps:
-    - uses: https://github.com/actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         token: ${{ secrets.PIPELINE_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
-    - uses: https://github.com/opentofu/setup-opentofu@v2
+    - uses: opentofu/setup-opentofu@v2
       with:
         tofu_version: 1.11.0
     - name: Update locks and open a checked pull request
