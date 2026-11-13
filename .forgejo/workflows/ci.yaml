@@ -82,15 +82,7 @@ jobs:
       with:
         tofu_version: 1.11.0
         tofu_wrapper: false
-    - name: Install Azure CLI
-      run: |
-        if ! command -v az; then
-          sudo mkdir -p /etc/apt/keyrings
-          curl --fail --silent --show-error https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg >/dev/null # internet: Azure CLI signing key
-          echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ noble main' | sudo tee /etc/apt/sources.list.d/azure-cli.list >/dev/null # internet: Azure CLI install source
-          sudo apt-get update -o Dir::Etc::sourcelist=sources.list.d/azure-cli.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
-          sudo apt-get install -y --no-install-recommends azure-cli
-        fi
+    - uses: romaine-life/pipeline-templates/actions/azure-cli@main
     - uses: azure/login@v3
       with:
         client-id: ${{ vars.ARM_CLIENT_ID }}
@@ -166,7 +158,7 @@ jobs:
           -e GITHUB_WORKSPACE=/workspace \
           --workdir /workspace \
           --entrypoint /bin/staticsites/StaticSitesClient \
-          mcr.microsoft.com/appsvc/staticappsclient:stable upload)
+          artifacts.home.romaine.life/mcr/appsvc/staticappsclient:stable@sha256:026b202feacf67ec0acd4846a1d17953f6c3c8ff912a1c0ec29aa6000a495f12 upload)
         trap 'docker rm -f "$container" >/dev/null' EXIT
         docker cp frontend "$container:/workspace/"
         docker start --attach "$container"
