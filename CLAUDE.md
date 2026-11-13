@@ -173,7 +173,7 @@ CI uses the repository ARM_* and TFSTATE_STORAGE_ACCOUNT variables with Azure OI
 
 ## CI/CD (.forgejo/workflows/)
 
-- `ci.yaml` checks conventions, OpenTofu format and the Vite build; plans on PR and applies/deploys to Azure Static Web App on main.
+- `ci.yml` checks conventions, OpenTofu format and the Vite build; plans on PR and applies/deploys to Azure Static Web App on main.
 - `tofu-lockfile-update.yaml` opens a checked PR to synchronize the canonical infra-bootstrap provider lock.
 
 ## Change Log
