@@ -8,5 +8,5 @@ dist/
 *.tfstate
 *.tfstate.backup
 
-# CI synchronizes the canonical infra-bootstrap provider lock.
+# The provider lock is committed; tofu/versions.tf pins the providers.
 !tofu/.terraform.lock.hcl

@@ -171,10 +171,16 @@ OpenTofu (Terraform) in `tofu/`. Manages:
 
 CI uses the repository ARM_* and TFSTATE_STORAGE_ACCOUNT variables with Azure OIDC.
 
-## CI/CD (.forgejo/workflows/)
+## CI/CD
 
-- `ci.yml` checks conventions, OpenTofu format and the Vite build; plans on PR and applies/deploys to Azure Static Web App on main.
-- `tofu-lockfile-update.yaml` opens a checked PR to synchronize the canonical infra-bootstrap provider lock.
+CI comes from pipeline-templates' suites (its `fleet.json` entry), each check running on a PR
+only when the files it reads changed:
+
+- `web-app`: the type check (`npm run lint`) and the production build (`npm test`) on a PR;
+  the build deployed to the Static Web App on a merge to main.
+- `tofu`: format, validate and plan on a PR; apply on a merge. The providers are pinned in
+  `tofu/versions.tf` and `tofu/.terraform.lock.hcl`.
+- `.forgejo/workflows/checks.yaml`: the file conventions, on every PR.
 
 ## Change Log
 

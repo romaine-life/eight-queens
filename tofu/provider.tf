@@ -1,3 +1,4 @@
+# The providers and their versions are pinned in versions.tf and .terraform.lock.hcl.
 terraform {
   backend "azurerm" {}
 }
